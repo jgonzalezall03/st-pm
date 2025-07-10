@@ -1,0 +1,17 @@
+# Dependencias principales
+streamlit
+pandas
+numpy
+plotly
+pm4py
+openai
+
+# Dependencias para visualizaciones
+networkx
+graphviz
+
+# Dependencias para exportación
+openpyxl
+
+# Dependencias para manejo de datos
+python-dateutil
