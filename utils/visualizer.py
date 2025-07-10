@@ -1,17 +1,32 @@
 import pm4py
-import graphviz
 import tempfile
 import os
+import subprocess
+import shutil
 from datetime import datetime
+
+try:
+    import graphviz
+    GRAPHVIZ_AVAILABLE = True
+except ImportError:
+    GRAPHVIZ_AVAILABLE = False
+
+def check_graphviz_executable():
+    """Verificar si el ejecutable de Graphviz está disponible"""
+    return shutil.which('dot') is not None
 
 class ProcessVisualizer:
     """Clase para crear visualizaciones de procesos usando pm4py y Graphviz"""
     
     def __init__(self):
         self.temp_dir = tempfile.gettempdir()
+        self.graphviz_available = GRAPHVIZ_AVAILABLE and check_graphviz_executable()
     
     def create_petri_net(self, event_log):
         """Crear visualización de Red de Petri"""
+        if not self.graphviz_available:
+            return self._create_alternative_visualization(event_log, "petri_net")
+        
         try:
             # Descubrir Red de Petri usando algoritmo inductive miner
             petri_net, initial_marking, final_marking = pm4py.discover_petri_net_inductive(event_log)
@@ -465,3 +480,128 @@ class ProcessVisualizer:
                 'success': False,
                 'error': f"Error al crear visualización resumen: {str(e)}"
             }
+    def _create_alternative_visualization(self, event_log, viz_type):
+        """Crear visualización alternativa cuando Graphviz no está disponible"""
+        try:
+            import matplotlib.pyplot as plt
+            import pandas as pd
+            import networkx as nx
+            from collections import defaultdict
+            
+            # Convertir event log a DataFrame si es necesario
+            if hasattr(event_log, 'to_dict'):
+                df = pd.DataFrame(event_log.to_dict())
+            else:
+                df = event_log
+            
+            # Crear grafo de flujo de proceso
+            G = nx.DiGraph()
+            transitions = defaultdict(int)
+            
+            # Agrupar por caso y crear secuencias
+            for case_id in df['case:concept:name'].unique():
+                case_events = df[df['case:concept:name'] == case_id].sort_values('time:timestamp')
+                activities = case_events['concept:name'].tolist()
+                
+                # Agregar transiciones
+                for i in range(len(activities) - 1):
+                    from_activity = activities[i]
+                    to_activity = activities[i + 1]
+                    transitions[(from_activity, to_activity)] += 1
+                    G.add_edge(from_activity, to_activity, weight=transitions[(from_activity, to_activity)])
+            
+            # Crear visualización con matplotlib
+            plt.figure(figsize=(12, 8))
+            plt.title(f'Flujo de Proceso - {viz_type.replace("_", " ").title()}')
+            
+            # Layout del grafo
+            pos = nx.spring_layout(G, k=2, iterations=50)
+            
+            # Dibujar nodos
+            nx.draw_networkx_nodes(G, pos, node_color='lightblue', 
+                                 node_size=3000, alpha=0.7)
+            
+            # Dibujar aristas con grosor proporcional al peso
+            edges = G.edges()
+            weights = [G[u][v]['weight'] for u, v in edges]
+            max_weight = max(weights) if weights else 1
+            
+            nx.draw_networkx_edges(G, pos, width=[w/max_weight * 5 for w in weights],
+                                 alpha=0.6, edge_color='gray', arrows=True,
+                                 arrowsize=20, arrowstyle='->')
+            
+            # Dibujar etiquetas
+            nx.draw_networkx_labels(G, pos, font_size=8, font_weight='bold')
+            
+            # Agregar etiquetas de peso en las aristas
+            edge_labels = {(u, v): str(G[u][v]['weight']) for u, v in G.edges()}
+            nx.draw_networkx_edge_labels(G, pos, edge_labels, font_size=6)
+            
+            plt.axis('off')
+            plt.tight_layout()
+            
+            # Guardar imagen
+            filename = f"{viz_type}_alternative_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+            file_path = os.path.join(self.temp_dir, filename)
+            plt.savefig(file_path, dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            # Calcular métricas básicas
+            num_activities = len(G.nodes())
+            num_transitions = len(G.edges())
+            
+            return {
+                'success': True,
+                'image_path': file_path,
+                'metrics': {
+                    'Actividades': num_activities,
+                    'Transiciones': num_transitions,
+                    'Casos': df['case:concept:name'].nunique(),
+                    'Eventos': len(df)
+                },
+                'warning': 'Visualización alternativa creada (Graphviz no disponible)'
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"Error al crear visualización alternativa: {str(e)}",
+                'suggestion': 'Instale Graphviz para visualizaciones completas'
+            }
+    
+    def get_installation_instructions(self):
+        """Obtener instrucciones de instalación de Graphviz"""
+        import platform
+        
+        system = platform.system().lower()
+        
+        instructions = {
+            'darwin': {  # macOS
+                'title': 'Instalación en macOS',
+                'commands': [
+                    'brew install graphviz',
+                    'pip install graphviz'
+                ],
+                'note': 'Requiere Homebrew instalado'
+            },
+            'linux': {
+                'title': 'Instalación en Linux',
+                'commands': [
+                    'sudo apt-get install graphviz graphviz-dev',  # Ubuntu/Debian
+                    'sudo yum install graphviz graphviz-devel',    # CentOS/RHEL
+                    'pip install graphviz'
+                ],
+                'note': 'Usar el comando apropiado para su distribución'
+            },
+            'windows': {
+                'title': 'Instalación en Windows',
+                'commands': [
+                    'Descargar desde: https://graphviz.org/download/',
+                    'Agregar a PATH: C:\\Program Files\\Graphviz\\bin',
+                    'pip install graphviz'
+                ],
+                'note': 'Reiniciar terminal después de agregar a PATH'
+            }
+        }
+        
+        return instructions.get(system, instructions['linux'])
