@@ -42,7 +42,7 @@ def main():
     page = st.sidebar.selectbox(
         "Seleccionar sección:",
         ["Carga de Datos", "Mapeo de Campos", "Visión Preliminar", 
-         #"Análisis de Proceso", 
+         "Análisis de Proceso", 
          "Análisis de Variantes", "Análisis de Costos", "Análisis de Recursos",
          "Análisis de Performance", "Visualizaciones", "Análisis con IA", "Exportar"]
     )
