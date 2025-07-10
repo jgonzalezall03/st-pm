@@ -11,6 +11,7 @@ from utils.process_analyzer import ProcessAnalyzer
 from utils.visualizer import ProcessVisualizer
 from utils.ai_analyzer import AIAnalyzer
 from utils.exporter import ResultExporter
+from utils.csv_diagnostics import CSVDiagnostics
 
 st.set_page_config(
     page_title="Analizador de Procesos",
@@ -109,7 +110,30 @@ def show_data_loading():
                 
         except Exception as e:
             st.error(f"Error al cargar el archivo: {str(e)}")
-            st.code(traceback.format_exc())
+            
+            # Mostrar información de diagnóstico si está disponible
+            error_str = str(e)
+            if "Diagnóstico del archivo" in error_str:
+                st.markdown("**Información de diagnóstico:**")
+                st.text(error_str)
+            else:
+                with st.expander("Ver detalles técnicos del error"):
+                    st.code(traceback.format_exc())
+            
+            # Mostrar consejos para resolver el problema
+            st.markdown("**💡 Consejos para resolver el problema:**")
+            st.markdown("""
+            1. **Formato del archivo**: Asegúrese de que sea un CSV válido con separadores consistentes
+            2. **Codificación**: Guarde el archivo como "CSV UTF-8" desde Excel
+            3. **Datos con comas**: Si sus datos contienen comas, enciérrelos entre comillas dobles
+            4. **Consistencia**: Todas las filas deben tener el mismo número de columnas
+            5. **Caracteres especiales**: Evite caracteres especiales en los nombres de columnas
+            """)
+            
+            # Opción para intentar con diferentes configuraciones
+            st.markdown("**🔧 Opciones de recuperación:**")
+            if st.button("Intentar carga con configuración alternativa"):
+                st.info("Funcionalidad en desarrollo. Por ahora, intente corregir el archivo manualmente.")
 
 def show_field_mapping():
     st.subheader("**🔧 Mapeo de Campos**")

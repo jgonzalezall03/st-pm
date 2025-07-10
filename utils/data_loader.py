@@ -10,26 +10,14 @@ class DataLoader:
         pass
     
     def load_file(self, uploaded_file):
-        """Cargar archivo CSV o Excel"""
+        """Cargar archivo CSV o Excel con manejo robusto de errores"""
         try:
             file_extension = uploaded_file.name.split('.')[-1].lower()
             
             if file_extension == 'csv':
-                # Intentar diferentes encodings para CSV
-                try:
-                    df = pd.read_csv(uploaded_file, encoding='utf-8', low_memory=False)
-                    #print(df.columns.tolist() ) # Forzar lectura de columnas
-                except UnicodeDecodeError:
-                    try:
-                        uploaded_file.seek(0)
-                        df = pd.read_csv(uploaded_file, encoding='latin-1')
-                    except UnicodeDecodeError:
-                        uploaded_file.seek(0)
-                        df = pd.read_csv(uploaded_file, encoding='cp1252')
-            
+                df = self._load_csv_robust(uploaded_file)
             elif file_extension in ['xlsx', 'xls']:
                 df = pd.read_excel(uploaded_file)
-            
             else:
                 raise ValueError(f"Formato de archivo no soportado: {file_extension}")
             
@@ -44,6 +32,86 @@ class DataLoader:
             
         except Exception as e:
             raise Exception(f"Error al cargar el archivo: {str(e)}")
+    
+    def _load_csv_robust(self, uploaded_file):
+        """Cargar CSV con múltiples estrategias para manejar archivos problemáticos"""
+        strategies = [
+            # Estrategia 1: Configuración estándar
+            {'encoding': 'utf-8', 'sep': ',', 'quotechar': '"', 'error_bad_lines': False},
+            # Estrategia 2: Con diferentes separadores
+            {'encoding': 'utf-8', 'sep': ';', 'quotechar': '"', 'error_bad_lines': False},
+            # Estrategia 3: Diferentes encodings
+            {'encoding': 'latin-1', 'sep': ',', 'quotechar': '"', 'error_bad_lines': False},
+            {'encoding': 'cp1252', 'sep': ',', 'quotechar': '"', 'error_bad_lines': False},
+            # Estrategia 4: Modo más permisivo
+            {'encoding': 'utf-8', 'sep': ',', 'quotechar': '"', 'error_bad_lines': False, 'warn_bad_lines': False, 'on_bad_lines': 'skip'},
+            # Estrategia 5: Sin quotes
+            {'encoding': 'utf-8', 'sep': ',', 'quoting': 3, 'error_bad_lines': False},  # QUOTE_NONE
+        ]
+        
+        last_error = None
+        
+        for i, strategy in enumerate(strategies):
+            try:
+                uploaded_file.seek(0)
+                
+                # Para pandas >= 1.3.0, usar on_bad_lines en lugar de error_bad_lines
+                strategy_clean = strategy.copy()
+                if 'error_bad_lines' in strategy_clean:
+                    del strategy_clean['error_bad_lines']
+                if 'warn_bad_lines' in strategy_clean:
+                    del strategy_clean['warn_bad_lines']
+                
+                # Intentar con on_bad_lines='skip' para pandas moderno
+                if 'on_bad_lines' not in strategy_clean:
+                    strategy_clean['on_bad_lines'] = 'skip'
+                
+                df = pd.read_csv(uploaded_file, **strategy_clean)
+                
+                if not df.empty and len(df.columns) > 0:
+                    st.info(f"Archivo cargado exitosamente usando estrategia {i+1}")
+                    return df
+                    
+            except Exception as e:
+                last_error = e
+                continue
+        
+        # Si todas las estrategias fallan, intentar diagnóstico
+        uploaded_file.seek(0)
+        try:
+            # Leer las primeras líneas para diagnóstico
+            content = uploaded_file.read().decode('utf-8', errors='ignore')
+            lines = content.split('\n')[:20]  # Primeras 20 líneas
+            
+            error_msg = f"No se pudo cargar el archivo CSV. Último error: {str(last_error)}\n\n"
+            error_msg += "Diagnóstico del archivo:\n"
+            error_msg += f"- Número de líneas analizadas: {len(lines)}\n"
+            
+            if len(lines) > 0:
+                error_msg += f"- Primera línea: {lines[0][:100]}...\n"
+                
+                # Detectar separador más común
+                separators = [',', ';', '\t', '|']
+                sep_counts = {sep: lines[0].count(sep) for sep in separators}
+                likely_sep = max(sep_counts, key=sep_counts.get)
+                error_msg += f"- Separador probable: '{likely_sep}' (aparece {sep_counts[likely_sep]} veces)\n"
+                
+                # Verificar línea problemática (línea 11 según el error)
+                if len(lines) > 10:
+                    error_msg += f"- Línea 11: {lines[10][:100]}...\n"
+                    error_msg += f"- Campos en línea 11: {len(lines[10].split(likely_sep))}\n"
+                    error_msg += f"- Campos en línea 1: {len(lines[0].split(likely_sep))}\n"
+            
+            error_msg += "\nSugerencias:\n"
+            error_msg += "1. Verifique que el archivo no tenga comas dentro de los datos sin comillas\n"
+            error_msg += "2. Asegúrese de que todas las filas tengan el mismo número de columnas\n"
+            error_msg += "3. Revise la línea 11 del archivo en un editor de texto\n"
+            error_msg += "4. Considere guardar el archivo como CSV UTF-8 desde Excel\n"
+            
+            raise Exception(error_msg)
+            
+        except UnicodeDecodeError:
+            raise Exception(f"Error de codificación del archivo. Último error: {str(last_error)}")
     
     def validate_mapping(self, df, field_mapping):
         """Validar que el mapeo de campos es correcto"""
