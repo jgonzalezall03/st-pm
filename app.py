@@ -130,10 +130,23 @@ def show_data_loading():
             5. **Caracteres especiales**: Evite caracteres especiales en los nombres de columnas
             """)
             
-            # Opción para intentar con diferentes configuraciones
+            # Opción para diagnóstico detallado
             st.markdown("**🔧 Opciones de recuperación:**")
-            if st.button("Intentar carga con configuración alternativa"):
-                st.info("Funcionalidad en desarrollo. Por ahora, intente corregir el archivo manualmente.")
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🔍 Diagnosticar Archivo", type="secondary"):
+                    CSVDiagnostics.show_diagnostic_interface(uploaded_file)
+            
+            with col2:
+                # Botón para descargar ejemplo
+                sample_csv = CSVDiagnostics.create_sample_csv()
+                st.download_button(
+                    label="📋 Descargar Ejemplo CSV",
+                    data=sample_csv,
+                    file_name="ejemplo_process_mining.csv",
+                    mime="text/csv"
+                )
 
 def show_field_mapping():
     st.subheader("**🔧 Mapeo de Campos**")
